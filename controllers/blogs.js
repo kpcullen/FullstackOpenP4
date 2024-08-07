@@ -11,7 +11,11 @@ blogsRouter.get('/', async (_, response) => {
 })
 
 blogsRouter.get('/:id', async (request, response) => {
-  const blog = await Blog.findById(request.params.id)
+  const blog = await Blog.findById(request.params.id).populate('user', {
+    username: 1,
+    name: 1,
+    comments: 1,
+  })
   if (blog) response.json(blog)
   if (!blog) response.status(404)
 })
@@ -37,7 +41,21 @@ blogsRouter.post('/', middleware.userExtractor, async (request, response) => {
 
   await user.save()
 
-  response.status(201).json(savedBlog)
+  const normalizedBlog = savedBlog.toObject()
+
+  const returnedBlog = {
+    title: normalizedBlog.title,
+    author: normalizedBlog.author,
+    url: normalizedBlog.url,
+    likes: normalizedBlog.likes,
+    id: normalizedBlog._id.toString(),
+    user: {
+      username: user.username,
+      name: user.name,
+      id: savedBlog.user,
+    },
+  }
+  response.status(200).json(returnedBlog)
 })
 
 blogsRouter.delete(
@@ -59,7 +77,7 @@ blogsRouter.delete(
     } else
       response
         .status(401)
-        .json({ error: 'Only the blog\'s creator can delete it' })
+        .json({ error: 'Only the blog creator can delete it' })
   }
 )
 
@@ -71,13 +89,33 @@ blogsRouter.put('/:id', async (request, response) => {
     author: body.author,
     url: body.url,
     likes: body.likes,
+    user: {
+      _id: body.user,
+    },
   }
 
   const updatedBlog = await Blog.findByIdAndUpdate(request.params.id, blog, {
     new: true,
   })
 
-  response.json(updatedBlog)
+  response.status(201).json(updatedBlog)
+})
+
+blogsRouter.post('/:id/comments', async (request, response) => {
+  const { id } = request.params
+  const { comment } = request.body
+
+  try {
+    const blog = await Blog.findById(id)
+    if (!blog) {
+      return response.status(404).json({ error: 'Blog does not exist anymore' })
+    }
+    blog.comments = [...blog.comments, comment]
+    await blog.save()
+    response.status(201).json(blog)
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
 })
 
 module.exports = blogsRouter
